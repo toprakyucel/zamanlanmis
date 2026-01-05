@@ -8,7 +8,7 @@ const token = '7451031457:AAGsUQW_i7K6F_CuNXoD_J0JDEW-ZtT9cWk';
 const targetChatId = '-1002141251250'; // Hedeflenen chat ID  
 
 // Botu oluştur
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(token, { polling: false });
 
 async function setupBrowser() {
   try {

@@ -9,7 +9,7 @@ const path = require('path');
 const PORT = 3000;
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 const BOT_TOKEN = '7451031457:AAGsUQW_i7K6F_CuNXoD_J0JDEW-ZtT9cWk';
-const ADMIN_PASS = 'kirikkase61'; // 🔐 YÖNETİCİ ŞİFRESİ
+const ADMIN_PASS = 'kirikkalp34'; // 🔐 YÖNETİCİ ŞİFRESİ
 
 // --- VARSAYILAN YAPILANDIRMA ---
 let config = {

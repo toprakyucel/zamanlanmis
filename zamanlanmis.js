@@ -1,19 +1,20 @@
 const puppeteer = require('puppeteer');
-// Telegram paketinin bozuk export etme sorununa karşı akıllı import:
-const TelegramBotRaw = require('node-telegram-bot-api');
-const TelegramBot = TelegramBotRaw.default ? TelegramBotRaw.default : TelegramBotRaw;
 const cron = require('node-cron');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+// --- TELEGRAM BOT DÜZELTMESİ (Constructor Hatasını Engeller) ---
+const TelegramBotRaw = require('node-telegram-bot-api');
+const TelegramBot = TelegramBotRaw.default || TelegramBotRaw;
+
 // --- SİSTEM AYARLARI ---
 const PORT = 3000;
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 const BOT_TOKEN = '7451031457:AAGsUQW_i7K6F_CuNXoD_J0JDEW-ZtT9cWk';
-const ADMIN_PASS = 'kirikkalp34'; // 🔐 YÖNETİCİ ŞİFRESİ
+const ADMIN_PASS = 'kirikkalp34';
 
-// --- LOGLAMA (GİZLİ SİSTEM) ---
+// --- LOGLAMA SİSTEMİ (OTOMATİK KLASÖR OLUŞTURUR) ---
 const LOGS_DIR = path.join(__dirname, 'logs');
 if (!fs.existsSync(LOGS_DIR)) {
     fs.mkdirSync(LOGS_DIR, { recursive: true });
@@ -21,7 +22,7 @@ if (!fs.existsSync(LOGS_DIR)) {
 const LOG_FILE = path.join(LOGS_DIR, 'activity_log.txt');
 
 function secureLog(req, action) {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Bilinmeyen_IP';
     const time = new Date().toLocaleString('tr-TR');
     const logLine = `[${time}] | İŞLEM: ${action} | IP: ${ip}\n`;
     fs.appendFileSync(LOG_FILE, logLine);
@@ -31,8 +32,8 @@ function secureLog(req, action) {
 let config = {
     chatId: '-1002141251250',
     cronTime: '07:30',
-    autoMessage: '📅 Günaydın! Piyasalar açılmadan önce günün ekonomik takvimi karşınızda.',
-    manualMessage: '🚀 Yönetim paneli üzerinden anlık durum güncellemesi.',
+    autoMessage: '', // YAZILAR KALDIRILDI
+    manualMessage: '', // YAZILAR KALDIRILDI
     waitDuration: 5000,
     viewportHeight: 1200,
     isRunning: true,
@@ -40,34 +41,27 @@ let config = {
     lastMessageId: null 
 };
 
-// --- AYAR YÖNETİMİ (ÇELİK YELEKLİ VERSİYON) ---
-function ensureFilesExist() {
-    const dir = path.dirname(SETTINGS_FILE);
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-    
-    if (!fs.existsSync(SETTINGS_FILE)) {
-        console.log('⚠️ settings.json bulunamadı, sıfırdan otomatik oluşturuluyor...');
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2));
-    }
-}
-
+// --- AKILLI DOSYA YÖNETİMİ ---
 function loadConfig() {
-    ensureFilesExist();
     try {
-        const data = fs.readFileSync(SETTINGS_FILE);
-        config = { ...config, ...JSON.parse(data) };
-        console.log('✅ Ayarlar başarıyla yüklendi.');
+        if (!fs.existsSync(SETTINGS_FILE)) {
+            fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2));
+        } else {
+            const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
+            config = { ...config, ...JSON.parse(data) };
+        }
     } catch (e) { 
-        console.error('Ayarlar okunamadı, varsayılanlar devrede.'); 
+        console.error('Ayarlar okunurken hata oluştu:', e.message); 
     }
 }
 
 function saveConfig() {
-    ensureFilesExist();
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2));
-    setupCron(); 
+    try {
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2));
+        setupCron(); 
+    } catch (e) {
+        console.error('Ayar kaydetme hatası:', e.message);
+    }
 }
 
 loadConfig();
@@ -78,22 +72,13 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 let cronTask;
 
-// --- WEB ARAYÜZÜ (DASHBOARD) ---
+// --- WEB ARAYÜZÜ ---
 app.get('/', (req, res) => {
     const [hour, minute] = config.cronTime.split(':');
     let nextRun = new Date();
-    nextRun.setHours(hour, minute, 0, 0);
+    nextRun.setHours(parseInt(hour), parseInt(minute), 0, 0);
     if (new Date() > nextRun) nextRun.setDate(nextRun.getDate() + 1);
     const nextRunISO = nextRun.toISOString();
-
-    const funnyQuestions = [
-        "Uşağum, Hamsi ağaca tırmanırsa ne olur?",
-        "Temel Fadime'ye ne demiş?",
-        "Trabzon'da 'sağa dönülmez' levhasını görünce ne yaparsın?",
-        "Çay bardağındaki kaşık sesi neyi ifade eder?",
-        "Laz müteahhit inşaata nerden başlar?",
-        "Oflu hoca cumada cemaate ne diye seslenmiş?"
-    ];
 
     res.send(`
     <!DOCTYPE html>
@@ -101,116 +86,105 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ToprakBot 61 - Admin</title>
+        <title>ToprakBot 61 - YÖNETİM</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
-            body { background-color: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; }
-            .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
-            .btn-custom { border-radius: 8px; font-weight: 600; text-transform: uppercase; padding: 12px; }
-            .countdown { font-size: 3rem; font-weight: 800; color: #38bdf8; text-shadow: 0 0 20px rgba(56,189,248,0.5); }
-            .form-control, .form-select { background-color: #334155; border: 1px solid #475569; color: #fff; }
-            .form-control:focus { background-color: #475569; color: #fff; border-color: #38bdf8; }
-            h5 { color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 15px; font-weight: 700; }
+            body { background-color: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+            .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
+            .btn-custom { border-radius: 6px; font-weight: 600; text-transform: uppercase; padding: 10px; transition: 0.2s all; }
+            .countdown { font-size: 2.8rem; font-weight: 800; color: #38bdf8; text-shadow: 0 0 15px rgba(56,189,248,0.4); font-variant-numeric: tabular-nums; }
+            .form-control, .form-select { background-color: #334155; border: 1px solid #475569; color: #f8fafc; }
+            .form-control:focus { background-color: #475569; color: #fff; border-color: #38bdf8; box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25); }
+            h5 { color: #94a3b8; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 20px;}
         </style>
     </head>
     <body>
-
-    <div class="container py-5" id="main-content">
-        <div class="d-flex justify-content-between align-items-center mb-5">
-            <div>
-                <h2 class="mb-0 fw-bold"><i class="fa-solid fa-user-secret me-2 text-warning"></i>ToprakBot <span class="text-info">v61</span></h2>
-                <small class="text-muted">Güvenli Otomasyon Sistemi</small>
+    <div class="container py-4">
+        <div class="row align-items-center mb-4">
+            <div class="col-md-8">
+                <h2 class="mb-0 fw-bold"><i class="fa-solid fa-robot me-2 text-warning"></i>ToprakBot <span class="text-info fs-4">v61</span></h2>
+                <span class="text-muted small">Güvenli Otomasyon & Rapor Merkezi (Sadece Görsel)</span>
             </div>
-            <div class="${config.isRunning ? 'text-success' : 'text-danger'} fw-bold border border-secondary px-3 py-2 rounded bg-dark">
-                <i class="fa-solid fa-circle me-2"></i>${config.isRunning ? 'SİSTEM AKTİF' : 'DURDURULDU'}
+            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                <div class="d-inline-block px-3 py-2 rounded ${config.isRunning ? 'bg-success bg-opacity-25 border border-success text-success' : 'bg-danger bg-opacity-25 border border-danger text-danger'} fw-bold">
+                    <i class="fa-solid fa-circle me-2"></i>${config.isRunning ? 'ZAMANLAYICI AKTİF' : 'SİSTEM DURDURULDU'}
+                </div>
             </div>
         </div>
 
         <div class="row g-4">
-            <div class="col-lg-5">
+            <div class="col-lg-4">
                 <div class="card mb-4">
                     <div class="card-body text-center py-4">
-                        <h5><i class="fa-regular fa-clock me-2"></i>Kalkışa Kalan Süre</h5>
-                        <div id="countdown" class="countdown">--:--:--</div>
-                        <div class="mt-2 text-info">Hedef Saat: <strong>${config.cronTime}</strong></div>
+                        <h5><i class="fa-regular fa-clock me-2"></i>Sıradaki Görev</h5>
+                        <div id="countdown" class="countdown mb-2">--:--:--</div>
+                        <div class="badge bg-secondary p-2 fs-6">Planlanan Saat: ${config.cronTime}</div>
                     </div>
                 </div>
 
                 <div class="card mb-4">
                     <div class="card-body">
-                        <h5><i class="fa-solid fa-rocket me-2"></i>Komuta Merkezi</h5>
-                        <div class="d-grid gap-3">
-                            <a href="/preview" target="_blank" class="btn btn-outline-info btn-custom"><i class="fa-solid fa-eye me-2"></i>Önizleme Yap</a>
-                            <a href="/send-now" class="btn btn-primary btn-custom"><i class="fa-solid fa-paper-plane me-2"></i>Telegram'a Gönder</a>
-                            
-                            <a href="/delete-last" class="btn btn-warning btn-custom ${!config.lastMessageId ? 'disabled' : ''}">
-                                <i class="fa-solid fa-trash-can me-2"></i>Son Mesajı Geri Çek
-                            </a>
-
-                            <div class="row g-2">
-                                <div class="col"><a href="/toggle-cron?state=on" class="btn btn-success w-100 py-2 ${config.isRunning ? 'disabled' : ''}"><i class="fa-solid fa-play"></i> Başlat</a></div>
-                                <div class="col"><a href="/toggle-cron?state=off" class="btn btn-danger w-100 py-2 ${!config.isRunning ? 'disabled' : ''}"><i class="fa-solid fa-stop"></i> Durdur</a></div>
-                            </div>
+                        <h5><i class="fa-solid fa-rocket me-2"></i>Hızlı İşlemler</h5>
+                        <div class="d-grid gap-2">
+                            <a href="/preview" target="_blank" class="btn btn-outline-info btn-custom"><i class="fa-solid fa-eye me-2"></i>Canlı Önizleme</a>
+                            <a href="/send-now" class="btn btn-primary btn-custom"><i class="fa-solid fa-paper-plane me-2"></i>Şimdi Gönder</a>
+                            <a href="/delete-last" class="btn btn-warning btn-custom ${!config.lastMessageId ? 'disabled' : ''}"><i class="fa-solid fa-trash-can me-2"></i>Son Mesajı Sil</a>
+                            <hr class="border-secondary my-2">
+                            <a href="/toggle-cron?state=on" class="btn btn-success btn-custom ${config.isRunning ? 'disabled' : ''}"><i class="fa-solid fa-play me-2"></i>Başlat</a>
+                            <a href="/toggle-cron?state=off" class="btn btn-danger btn-custom ${!config.isRunning ? 'disabled' : ''}"><i class="fa-solid fa-stop me-2"></i>Durdur</a>
                         </div>
                     </div>
                 </div>
-
-                <div class="card">
-                    <div class="card-body text-center">
-                        <small class="text-muted"><i class="fa-solid fa-server me-2"></i>Son İşlem: <span class="text-white">${config.lastRun}</span></small>
-                    </div>
+                
+                <div class="text-center text-muted small">
+                    <i class="fa-solid fa-circle-info me-1"></i>Son İşlem: ${config.lastRun}
                 </div>
             </div>
 
-            <div class="col-lg-7">
+            <div class="col-lg-8">
                 <div class="card h-100">
                     <div class="card-body p-4">
-                        <div class="d-flex justify-content-between">
-                            <h5><i class="fa-solid fa-gears me-2"></i>Sistem Parametreleri</h5>
-                            <i class="fa-solid fa-lock text-warning" title="Şifre Korumalı"></i>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0 border-0"><i class="fa-solid fa-sliders me-2"></i>Sistem Parametreleri</h5>
+                            <i class="fa-solid fa-lock text-warning" title="Güvenlik Korumalı"></i>
                         </div>
                         
                         <form id="settingsForm" action="/update" method="POST">
-                            <div class="row mb-3">
+                            <div class="row g-3 mb-3">
                                 <div class="col-md-6">
-                                    <label class="form-label text-warning">⏰ Tetiklenme Saati</label>
+                                    <label class="form-label text-warning small fw-bold">Tetiklenme Saati</label>
                                     <input type="time" name="cronTime" class="form-control" value="${config.cronTime}" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label text-info">🆔 Chat ID</label>
-                                    <input type="text" name="chatId" class="form-control" value="${config.chatId}">
-                                </div>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">⏳ Bekleme (ms)</label>
-                                    <input type="number" name="waitDuration" class="form-control" value="${config.waitDuration}">
+                                    <label class="form-label text-info small fw-bold">Hedef Chat ID</label>
+                                    <input type="text" name="chatId" class="form-control" value="${config.chatId}" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">📏 Yükseklik (px)</label>
-                                    <input type="number" name="viewportHeight" class="form-control" value="${config.viewportHeight}">
+                                    <label class="form-label small fw-bold">Sayfa Bekleme Süresi (ms)</label>
+                                    <input type="number" name="waitDuration" class="form-control" value="${config.waitDuration}" min="1000">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">Görsel Yüksekliği (px)</label>
+                                    <input type="number" name="viewportHeight" class="form-control" value="${config.viewportHeight}" min="500">
                                 </div>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label">📅 Otomatik Mesaj</label>
-                                <textarea name="autoMessage" class="form-control" rows="2">${config.autoMessage}</textarea>
+                                <label class="form-label small fw-bold text-muted">Otomatik Gönderim Mesajı (Boş Bırakılabilir)</label>
+                                <textarea name="autoMessage" class="form-control" rows="2" placeholder="Sadece resim gitmesi için boş bırakın">${config.autoMessage}</textarea>
                             </div>
 
-                            <div class="mb-3">
-                                <label class="form-label">🚀 Manuel Mesaj</label>
-                                <textarea name="manualMessage" class="form-control" rows="2">${config.manualMessage}</textarea>
+                            <div class="mb-4">
+                                <label class="form-label small fw-bold text-muted">Manuel Gönderim Mesajı (Boş Bırakılabilir)</label>
+                                <textarea name="manualMessage" class="form-control" rows="2" placeholder="Sadece resim gitmesi için boş bırakın">${config.manualMessage}</textarea>
                             </div>
-
-                            <hr class="border-secondary my-4">
                             
-                            <button type="button" onclick="openSecurityModal()" class="btn btn-success w-100 btn-custom">
-                                <i class="fa-solid fa-floppy-disk me-2"></i>DEĞİŞİKLİKLERİ KAYDET
-                            </button>
-
-                            <input type="hidden" name="password" id="hiddenPasswordInput">
+                            <div class="input-group mb-3">
+                                <span class="input-group-text bg-secondary border-secondary text-white"><i class="fa-solid fa-key"></i></span>
+                                <input type="password" name="password" class="form-control border-secondary" placeholder="Değişiklikleri kaydetmek için yönetici şifresini girin" required>
+                                <button type="submit" class="btn btn-success px-4 fw-bold"><i class="fa-solid fa-floppy-disk me-2"></i>KAYDET</button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -218,34 +192,8 @@ app.get('/', (req, res) => {
         </div>
     </div>
 
-    <!-- GÜVENLİK MODALI -->
-    <div class="modal fade" id="securityModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark border-secondary text-white">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-warning"><i class="fa-solid fa-shield-halved me-2"></i>Güvenlik Kontrolü</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <div class="mb-3">
-                        <i class="fa-solid fa-circle-question fa-3x text-info mb-3"></i>
-                        <p class="fs-5 fw-bold" id="funnyQuestionText">...</p>
-                    </div>
-                    <div class="form-floating mb-3">
-                        <input type="password" class="form-control bg-secondary text-white border-0" id="modalPassword" placeholder="Şifre">
-                        <label class="text-white">Yönetici Şifresi</label>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-primary w-100" onclick="submitForm()">Doğrula ve Kaydet</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // --- SAYAÇ JS ---
         const targetDate = new Date("${nextRunISO}").getTime();
         setInterval(function() {
             const now = new Date().getTime();
@@ -254,76 +202,49 @@ app.get('/', (req, res) => {
             const h = Math.floor((distance % (86400000)) / (3600000));
             const m = Math.floor((distance % (3600000)) / (60000));
             const s = Math.floor((distance % (60000)) / 1000);
-            document.getElementById("countdown").innerHTML = 
-                (h<10?"0":"")+h + ":" + (m<10?"0":"")+m + ":" + (s<10?"0":"")+s;
+            document.getElementById("countdown").innerHTML = (h<10?"0":"")+h + ":" + (m<10?"0":"")+m + ":" + (s<10?"0":"")+s;
         }, 1000);
-
-        // --- GÜVENLİK MODALI JS ---
-        const questions = ${JSON.stringify(funnyQuestions)};
-        const modal = new bootstrap.Modal(document.getElementById('securityModal'));
-
-        function openSecurityModal() {
-            const randomQ = questions[Math.floor(Math.random() * questions.length)];
-            document.getElementById('funnyQuestionText').innerText = randomQ;
-            document.getElementById('modalPassword').value = ''; 
-            modal.show();
-        }
-
-        function submitForm() {
-            const pass = document.getElementById('modalPassword').value;
-            if(!pass) { alert("Ula şifre girmedun!"); return; }
-            
-            document.getElementById('hiddenPasswordInput').value = pass;
-            document.getElementById('settingsForm').submit();
-        }
     </script>
     </body>
     </html>
     `);
 });
 
-// --- API YOLLARI ---
-
+// --- API ROUTES ---
 app.post('/update', (req, res) => {
-    // ŞİFRE KONTROLÜ
     if (req.body.password !== ADMIN_PASS) {
-        secureLog(req, 'HATALI_SIFRE_DENEMESI'); 
+        secureLog(req, 'HATALI_SIFRE'); 
         return res.send(`
-            <body style="background:#121212; color:red; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif; text-align:center;">
-                <div>
-                    <h1>🚫 ŞİFRE YANLIŞ!</h1>
-                    <h3>Uyyy uşağum, sen admin değilsun galiba?</h3>
-                    <p>Geri dön ve tekrar dene daa.</p>
-                    <button onclick="window.history.back()" style="padding:10px 20px; cursor:pointer;">Geri Dön</button>
-                </div>
+            <body style="background:#0f172a; color:#ef4444; display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; font-family:sans-serif; text-align:center;">
+                <h1 style="font-size:4rem; margin-bottom:10px;">🚫</h1>
+                <h2>YETKİSİZ ERİŞİM DENEMESİ</h2>
+                <p style="color:#94a3b8;">Girdiğiniz yönetici şifresi hatalı.</p>
+                <button onclick="window.history.back()" style="background:#3b82f6; color:white; border:none; padding:12px 24px; border-radius:6px; cursor:pointer; font-weight:bold; margin-top:15px;">Geri Dön ve Tekrar Dene</button>
             </body>
         `);
     }
 
-    secureLog(req, 'AYARLARI_KAYDETTI'); 
+    secureLog(req, 'AYARLAR_GUNCELLENDI'); 
     config.cronTime = req.body.cronTime;
     config.chatId = req.body.chatId;
     config.waitDuration = parseInt(req.body.waitDuration);
     config.viewportHeight = parseInt(req.body.viewportHeight);
-    config.autoMessage = req.body.autoMessage;
-    config.manualMessage = req.body.manualMessage;
+    config.autoMessage = req.body.autoMessage || ''; // Eğer boş gelirse string kalır
+    config.manualMessage = req.body.manualMessage || '';
     saveConfig();
     res.redirect('/');
 });
 
 app.get('/delete-last', async (req, res) => {
-    secureLog(req, 'SON_MESAJI_SILMEYI_DENEDI'); 
+    secureLog(req, 'MESAJ_SILME_TALEBI'); 
     if (config.lastMessageId) {
         try {
-            console.log(`🗑️ Mesaj siliniyor: ${config.lastMessageId}`);
             await bot.deleteMessage(config.chatId, config.lastMessageId);
             config.lastMessageId = null;
-            config.lastRun += ' (Mesaj Silindi)';
+            config.lastRun = 'Mesaj Başarıyla Silindi';
             saveConfig();
-            secureLog(req, 'SON_MESAJI_BASARIYLA_SILDI'); 
         } catch (error) {
-            console.error('Silme hatası:', error.message);
-            config.lastRun += ' (Silinemedi)';
+            config.lastRun = 'Mesaj Silinemedi (' + error.message + ')';
             saveConfig(); 
         }
     }
@@ -332,46 +253,48 @@ app.get('/delete-last', async (req, res) => {
 
 app.get('/toggle-cron', (req, res) => {
     const isNowRunning = (req.query.state === 'on');
-    secureLog(req, isNowRunning ? 'ZAMANLAYICI_BASLATILDI' : 'ZAMANLAYICI_DURDURULDU'); 
+    secureLog(req, isNowRunning ? 'ZAMANLAYICI_BASLADI' : 'ZAMANLAYICI_DURDU'); 
     config.isRunning = isNowRunning;
     saveConfig();
     res.redirect('/');
 });
 
 app.get('/preview', async (req, res) => {
-    secureLog(req, 'ONIZLEME_YAPTI'); 
+    secureLog(req, 'ONIZLEME_TALEBI'); 
     try {
         const buffer = await generateScreenshot();
         res.set('Content-Type', 'image/png');
         res.send(buffer);
-    } catch (e) { res.send('Hata: ' + e.message); }
-});
-
-app.get('/send-now', async (req, res) => {
-    secureLog(req, 'MANUEL_TELEGRAM_GONDERIMI_BASLATTI'); 
-    try {
-        config.lastRun = 'Manuel: ' + new Date().toLocaleString('tr-TR');
-        const buffer = await generateScreenshot();
-        
-        const sentMsg = await bot.sendPhoto(config.chatId, buffer, { caption: config.manualMessage });
-        config.lastMessageId = sentMsg.message_id;
-        
-        config.lastRun += ' (BAŞARILI)';
-        saveConfig();
-        secureLog(req, 'MANUEL_TELEGRAM_GONDERIMI_BASARILI'); 
-        res.redirect('/');
     } catch (e) { 
-        config.lastRun += ' (HATA: ' + e.message + ')';
-        saveConfig();
-        res.send('Hata: ' + e.message); 
+        res.status(500).send('<h1>Hata Oluştu</h1><p>' + e.message + '</p>'); 
     }
 });
 
-// --- CORE LOGIC ---
+app.get('/send-now', async (req, res) => {
+    secureLog(req, 'MANUEL_GONDERIM'); 
+    try {
+        const buffer = await generateScreenshot();
+        
+        // EĞER MESAJ BOŞSA SADECE FOTOĞRAF GÖNDERİLİR
+        const sendOptions = config.manualMessage ? { caption: config.manualMessage } : {};
+        const sentMsg = await bot.sendPhoto(config.chatId, buffer, sendOptions);
+        
+        config.lastMessageId = sentMsg.message_id;
+        config.lastRun = 'Manuel Gönderim Başarılı: ' + new Date().toLocaleTimeString('tr-TR');
+        saveConfig();
+        res.redirect('/');
+    } catch (e) { 
+        config.lastRun = 'Manuel HATA: ' + e.message;
+        saveConfig();
+        res.status(500).send('<h1>Gönderim Hatası</h1><p>' + e.message + '</p><button onclick="window.history.back()">Geri</button>'); 
+    }
+});
+
+// --- PUPPETEER ÇEKİRDEĞİ ---
 async function generateScreenshot() {
     console.log('📸 Ekran görüntüsü süreci başladı...');
     const browser = await puppeteer.launch({ 
-        headless: true, 
+        headless: "new", 
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--window-size=1200,1200']
     });
 
@@ -391,41 +314,46 @@ async function generateScreenshot() {
             </html>`;
 
         await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-        console.log(`⏳ Veri için ${config.waitDuration}ms bekleniyor...`);
+        console.log(`⏳ Iframe verisi için ${config.waitDuration}ms bekleniyor...`);
         await new Promise(r => setTimeout(r, config.waitDuration)); 
         return await page.screenshot({ fullPage: true });
-
     } finally {
         await browser.close();
     }
 }
 
-// --- CRON ---
+// --- ZAMANLAYICI (CRON) SİSTEMİ ---
 function setupCron() {
     if(cronTask) cronTask.stop();
-    if(!config.isRunning) { console.log('⛔ Cron durduruldu.'); return; }
+    if(!config.isRunning) { 
+        console.log('⛔ Cron durduruldu.'); 
+        return; 
+    }
 
     const [hour, minute] = config.cronTime.split(':');
     const cronExpression = `${minute} ${hour} * * *`;
-    console.log(`✅ Zamanlayıcı kuruldu: ${config.cronTime}`);
+    console.log(`✅ Zamanlayıcı Aktif: Her gün saat ${config.cronTime} itibarıyla çalışacak.`);
 
     cronTask = cron.schedule(cronExpression, async () => {
         console.log('⏰ Otomatik görev tetiklendi.');
-        config.lastRun = 'Otomatik: ' + new Date().toLocaleString('tr-TR');
         try {
             const buffer = await generateScreenshot();
-            const sentMsg = await bot.sendPhoto(config.chatId, buffer, { caption: config.autoMessage });
+            
+            // EĞER MESAJ BOŞSA SADECE FOTOĞRAF GÖNDERİLİR
+            const sendOptions = config.autoMessage ? { caption: config.autoMessage } : {};
+            const sentMsg = await bot.sendPhoto(config.chatId, buffer, sendOptions);
+            
             config.lastMessageId = sentMsg.message_id; 
-            config.lastRun += ' (BAŞARILI)';
+            config.lastRun = 'Otomatik Görev Başarılı: ' + new Date().toLocaleTimeString('tr-TR');
         } catch (err) { 
-            console.error('Hata:', err);
-            config.lastRun += ' (HATA)';
+            console.error('Otomatik Görev Hatası:', err.message);
+            config.lastRun = 'Otomatik HATA: ' + err.message;
         }
         saveConfig();
     });
 }
 
-// --- START ---
+// --- SİSTEMİ BAŞLAT ---
 app.listen(PORT, () => {
-    console.log(`🚀 SİSTEM BAŞLATILDI: http://localhost:${PORT}`);
+    console.log(`🚀 SİSTEM BAŞLATILDI! Panele Git: http://localhost:${PORT}`);
 });

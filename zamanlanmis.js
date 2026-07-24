@@ -1,5 +1,7 @@
 const puppeteer = require('puppeteer');
-const TelegramBot = require('node-telegram-bot-api');
+// Telegram paketinin bozuk export etme sorununa karşı akıllı import:
+const TelegramBotRaw = require('node-telegram-bot-api');
+const TelegramBot = TelegramBotRaw.default ? TelegramBotRaw.default : TelegramBotRaw;
 const cron = require('node-cron');
 const express = require('express');
 const fs = require('fs');
@@ -14,7 +16,7 @@ const ADMIN_PASS = 'kirikkalp34'; // 🔐 YÖNETİCİ ŞİFRESİ
 // --- LOGLAMA (GİZLİ SİSTEM) ---
 const LOGS_DIR = path.join(__dirname, 'logs');
 if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR);
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
 }
 const LOG_FILE = path.join(LOGS_DIR, 'activity_log.txt');
 
@@ -38,18 +40,32 @@ let config = {
     lastMessageId: null 
 };
 
-// --- AYAR YÖNETİMİ ---
+// --- AYAR YÖNETİMİ (ÇELİK YELEKLİ VERSİYON) ---
+function ensureFilesExist() {
+    const dir = path.dirname(SETTINGS_FILE);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    if (!fs.existsSync(SETTINGS_FILE)) {
+        console.log('⚠️ settings.json bulunamadı, sıfırdan otomatik oluşturuluyor...');
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2));
+    }
+}
+
 function loadConfig() {
-    if (fs.existsSync(SETTINGS_FILE)) {
-        try {
-            const data = fs.readFileSync(SETTINGS_FILE);
-            config = { ...config, ...JSON.parse(data) };
-            console.log('✅ Ayarlar yüklendi.');
-        } catch (e) { console.error('Ayarlar okunamadı.'); }
+    ensureFilesExist();
+    try {
+        const data = fs.readFileSync(SETTINGS_FILE);
+        config = { ...config, ...JSON.parse(data) };
+        console.log('✅ Ayarlar başarıyla yüklendi.');
+    } catch (e) { 
+        console.error('Ayarlar okunamadı, varsayılanlar devrede.'); 
     }
 }
 
 function saveConfig() {
+    ensureFilesExist();
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2));
     setupCron(); 
 }
@@ -100,7 +116,6 @@ app.get('/', (req, res) => {
     </head>
     <body>
 
-    <!-- ANA PANEL -->
     <div class="container py-5" id="main-content">
         <div class="d-flex justify-content-between align-items-center mb-5">
             <div>
@@ -356,7 +371,7 @@ app.get('/send-now', async (req, res) => {
 async function generateScreenshot() {
     console.log('📸 Ekran görüntüsü süreci başladı...');
     const browser = await puppeteer.launch({ 
-        headless: true, // "new" parametresi yerine true kullanılması daha sağlıklıdır
+        headless: true, 
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--window-size=1200,1200']
     });
 
@@ -375,7 +390,6 @@ async function generateScreenshot() {
             </body>
             </html>`;
 
-        // Yükleme kontrolünü yumuşattık (networkidle0 yerine domcontentloaded)
         await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
         console.log(`⏳ Veri için ${config.waitDuration}ms bekleniyor...`);
         await new Promise(r => setTimeout(r, config.waitDuration)); 
@@ -413,6 +427,5 @@ function setupCron() {
 
 // --- START ---
 app.listen(PORT, () => {
-    setupCron();
     console.log(`🚀 SİSTEM BAŞLATILDI: http://localhost:${PORT}`);
 });

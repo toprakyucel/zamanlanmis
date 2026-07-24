@@ -32,8 +32,8 @@ function secureLog(req, action) {
 let config = {
     chatId: '-1002141251250',
     cronTime: '07:30',
-    autoMessage: '', // YAZILAR KALDIRILDI
-    manualMessage: '', // YAZILAR KALDIRILDI
+    autoMessage: '', 
+    manualMessage: '', 
     waitDuration: 5000,
     viewportHeight: 1200,
     isRunning: true,
@@ -229,7 +229,7 @@ app.post('/update', (req, res) => {
     config.chatId = req.body.chatId;
     config.waitDuration = parseInt(req.body.waitDuration);
     config.viewportHeight = parseInt(req.body.viewportHeight);
-    config.autoMessage = req.body.autoMessage || ''; // Eğer boş gelirse string kalır
+    config.autoMessage = req.body.autoMessage || '';
     config.manualMessage = req.body.manualMessage || '';
     saveConfig();
     res.redirect('/');
@@ -275,7 +275,6 @@ app.get('/send-now', async (req, res) => {
     try {
         const buffer = await generateScreenshot();
         
-        // EĞER MESAJ BOŞSA SADECE FOTOĞRAF GÖNDERİLİR
         const sendOptions = config.manualMessage ? { caption: config.manualMessage } : {};
         const sentMsg = await bot.sendPhoto(config.chatId, buffer, sendOptions);
         
@@ -290,32 +289,44 @@ app.get('/send-now', async (req, res) => {
     }
 });
 
-// --- PUPPETEER ÇEKİRDEĞİ ---
+// --- PUPPETEER ÇEKİRDEĞİ (ÇÖKME/GRİ EKRAN FİXLENDİ) ---
 async function generateScreenshot() {
     console.log('📸 Ekran görüntüsü süreci başladı...');
     const browser = await puppeteer.launch({ 
-        headless: "new", 
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--window-size=1200,1200']
+        headless: true, 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage', 
+            '--disable-gpu', 
+            '--disable-accelerated-2d-canvas',
+            '--disable-extensions',
+            '--window-size=1200,1200'
+        ]
     });
 
     try {
         const page = await browser.newPage();
+        
+        // Gerçek bir tarayıcı taklidi yapıyoruz
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1100, height: config.viewportHeight });
 
-        const htmlContent = `
-            <!DOCTYPE html>
-            <html>
-            <head><style>body { margin: 0; background: white; overflow: hidden; }</style></head>
-            <body>
-            <iframe src="https://sslecal2.investing.com?ecoDayBackground=%23d11b1b&defaultFont=%23000000&columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&importance=2,3&features=datepicker,timezone&countries=72,17,63,5&calType=day&timeZone=63&lang=1" 
-                    width="100%" height="${config.viewportHeight}" frameborder="0"></iframe>
-            </body>
-            </html>`;
+        const targetUrl = 'https://sslecal2.investing.com?ecoDayBackground=%23d11b1b&defaultFont=%23000000&columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&importance=2,3&features=datepicker,timezone&countries=72,17,63,5&calType=day&timeZone=63&lang=1';
 
-        await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-        console.log(`⏳ Iframe verisi için ${config.waitDuration}ms bekleniyor...`);
+        console.log(`🌐 Investing adresine doğrudan bağlanılıyor...`);
+        
+        // Iframe yerine sayfaya bizzat gidiyoruz!
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // Sayfa yüklendikten sonra arkaplanı beyaza boyuyoruz (Şeffaf veya gri sorununa karşı)
+        await page.evaluate(() => {
+            document.body.style.backgroundColor = 'white';
+        });
+
+        console.log(`⏳ Veri tam otursun diye ${config.waitDuration}ms bekleniyor...`);
         await new Promise(r => setTimeout(r, config.waitDuration)); 
+        
         return await page.screenshot({ fullPage: true });
     } finally {
         await browser.close();
@@ -339,7 +350,6 @@ function setupCron() {
         try {
             const buffer = await generateScreenshot();
             
-            // EĞER MESAJ BOŞSA SADECE FOTOĞRAF GÖNDERİLİR
             const sendOptions = config.autoMessage ? { caption: config.autoMessage } : {};
             const sentMsg = await bot.sendPhoto(config.chatId, buffer, sendOptions);
             
